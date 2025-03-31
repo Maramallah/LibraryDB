@@ -2,8 +2,7 @@
 CREATE INDEX idx_UserID ON BorrowRecords(UserID);
 CREATE INDEX idx_BookISBN ON BookCopy(BookISBN);
 --Members Procedures
-
-CREATE PROCEDURE SignUp 
+CREATE or alter PROCEDURE SignUp 
     @FirstName NVARCHAR(50),
     @LastName NVARCHAR(50),
     @Email NVARCHAR(100),
@@ -12,16 +11,27 @@ CREATE PROCEDURE SignUp
     @Password NVARCHAR(100)  
 AS
 BEGIN
-  
-    IF EXISTS (SELECT 1 FROM Users WHERE Email = @Email and UserType='Member')
+    DECLARE @NewUserID INT;
+
+    -- Check if the user already exists
+    IF EXISTS (SELECT 1 FROM Users WHERE Email = @Email AND UserType = 'Member')
     BEGIN 
-        SELECT 'User Already Exists' AS Message;
-    END;
-	else
-    INSERT INTO Users (FirstName, LastName, Email, Phone, Address,Password, UserType) 
-    VALUES (@FirstName, @LastName, @Email, @Phone, @Address, HASHBYTES('SHA2_256', @Password), 'Member'); 
-    SELECT 'User Registered Successfully' AS Message;
+        SELECT 'User Already Exists' AS Message, NULL AS UserID;
+    END
+    ELSE
+    BEGIN
+        -- Insert new user
+        INSERT INTO Users (FirstName, LastName, Email, Phone, Address, Password, UserType) 
+        VALUES (@FirstName, @LastName, @Email, @Phone, @Address, HASHBYTES('SHA2_256', @Password), 'Member'); 
+
+        -- Retrieve the newly created UserID
+        SET @NewUserID = SCOPE_IDENTITY();
+
+        -- Return success message and UserID
+        SELECT 'User Registered Successfully' AS Message, @NewUserID AS UserID;
+    END
 END;
+
 
 
 CREATE PROCEDURE MemberSignIn
@@ -62,19 +72,20 @@ begin
 select  COALESCE(sum(FineAmount),0) as TotalFine from BorrowRecords where UserID = @UserID and ReturnDate is not null
 end;
 
-Create Procedure BorrowRecordeHistory
-@UserID int
-as  
-Begin 
+CREATE OR ALTER PROCEDURE BorrowRecordeHistory
+@UserID INT
+AS  
+BEGIN
+    SELECT b.*, f.PaymentDay, f.AmountPaid
+    FROM dbo.BorrowRecords b
+    LEFT JOIN dbo.FinePayment f
+        ON b.BookISBN = f.BookISBN 
+        AND b.CopyNum = f.CopyNum 
+        AND b.UserID = f.UserID
+    WHERE b.UserID = @UserID;
+END;
 
-SELECT b.*, f.PaymentDay, f.AmountPaid
-FROM     dbo.FinePayment f INNER JOIN
-                  dbo.BorrowRecords b ON b.BookISBN = f.BookISBN and b.CopyNum=f.CopyNum and b.UserID=f.UserID
-				  where b.UserID=@UserID
-				 
-End;
 
-drop procedure CurrentBorrowRecords
 
 Create Procedure  CurrentBorrowRecords
 @UserID int 
@@ -188,23 +199,20 @@ BEGIN
         SELECT 'Book Not Available' AS Message;
     END
 END;
-
-CREATE PROCEDURE ReturnBook 
+CREATE or alter PROCEDURE ReturnBook 
     @UserID INT,
     @BookName NVARCHAR(100)
 AS
 BEGIN
-    --SET NOCOUNT ON; 
-
+    -- Declare variables
     DECLARE @CopyNum INT, @ISBN NVARCHAR(100);
 
     -- Start a transaction to maintain atomicity
     BEGIN TRANSACTION;
 
-   
+    -- Retrieve the BookISBN and CopyNum for the book being returned
     SELECT @CopyNum = br.CopyNum, 
            @ISBN = br.BookISBN 
-         
     FROM BorrowRecords br
     INNER JOIN Book b ON b.ISBN = br.BookISBN
     WHERE br.UserID = @UserID 
@@ -214,11 +222,17 @@ BEGIN
     -- If a record is found, process the return
     IF @CopyNum IS NOT NULL AND @ISBN IS NOT NULL
     BEGIN
-        -- Update BorrowRecords to set the return date
+        -- Update BorrowRecords to set the return date, calculate LateDays and FineAmount
         UPDATE BorrowRecords 
         SET ReturnDate = GETDATE(),
-		LateDays=DATEDIFF(DAY, DueDate, Getdate()), 
-	    FineAmount = LateDays * 10 
+            LateDays = CASE 
+                          WHEN GETDATE() > DueDate THEN DATEDIFF(DAY, DueDate, GETDATE()) 
+                          ELSE 0 
+                       END, 
+            FineAmount = CASE 
+                            WHEN GETDATE() > DueDate THEN DATEDIFF(DAY, DueDate, GETDATE()) * 10 
+                            ELSE 0 
+                         END
         WHERE UserID = @UserID 
           AND BookISBN = @ISBN 
           AND CopyNum = @CopyNum 
@@ -229,8 +243,6 @@ BEGIN
         SET Available = 1 
         WHERE CopyNum = @CopyNum 
           AND BookISBN = @ISBN;
-
-	
 
         -- Commit transaction after successful update
         COMMIT TRANSACTION;
@@ -245,6 +257,7 @@ BEGIN
         SELECT 'No records of that book found or already returned' AS Message;
     END
 END;
+
 
 
 CREATE PROCEDURE PayFine 
@@ -320,3 +333,16 @@ BEGIN
     -- Return success message
     SELECT 'Fine Paid Successfully for All Returned Books' AS Message, @TotalFine AS TotalAmountPaid;
 END;
+use Library
+EXEC BorrowRecordeHistory 3;
+EXEC CurrentBorrowRecords 3;
+
+ALTER TABLE BorrowRecords
+ADD CONSTRAINT UQ_Borrow_Active UNIQUE (UserID, BookISBN, CopyNum, ReturnDate);
+
+SELECT name 
+FROM sys.key_constraints 
+WHERE type = 'PK' AND parent_object_id = OBJECT_ID('BorrowRecords');
+
+ALTER TABLE BorrowRecords
+DROP CONSTRAINT PK__BorrowRe__7E983CA03A4EC269; -- Replace with actual name
