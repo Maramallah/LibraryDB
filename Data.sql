@@ -34,7 +34,7 @@ VALUES
 ('J.K. Rowling'), ('Stephen King'), ('George R.R. Martin'), ('J.R.R. Tolkien'), ('Agatha Christie'),
 ('Isaac Asimov'), ('Dan Brown'), ('Margaret Atwood'), ('Haruki Murakami'), ('Jane Austen'),
 ('Ernest Hemingway'), ('Mark Twain'), ('Charles Dickens'), ('F. Scott Fitzgerald'), ('Leo Tolstoy'),
-('Fyodor Dostoevsky'), ('Gabriel García Márquez'), ('James Joyce'), ('Virginia Woolf'), ('Oscar Wilde');
+('Fyodor Dostoevsky'), ('Gabriel GarcÃ­a MÃ¡rquez'), ('James Joyce'), ('Virginia Woolf'), ('Oscar Wilde');
 
 -- Category table: Stores book categories
 CREATE TABLE Category (
