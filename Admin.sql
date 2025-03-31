@@ -1,4 +1,4 @@
-﻿
+use Library
 -- Admin
 
 Create View Admins as
@@ -31,7 +31,7 @@ BEGIN
         select 'Invalid email or password!' as message;
     END
 END;
-
+drop procedure AddNewAdmins
 CREATE PROCEDURE AddNewAdmins 
     @FirstName NVARCHAR(50),
     @LastName NVARCHAR(50),
@@ -41,18 +41,30 @@ CREATE PROCEDURE AddNewAdmins
     @Password NVARCHAR(100) 
 AS 
 BEGIN 
-    
-    IF EXISTS (SELECT 1 FROM Users WHERE Email = @Email and FirstName = @FirstName)
-    BEGIN
-       select 'Admin Already Exists' as message;
-        RETURN;
-    END
+    BEGIN TRY
+        -- Check if Email or Phone already exists
+        IF EXISTS (SELECT 1 FROM Users WHERE Email = @Email and FirstName=@FirstName)
+        BEGIN
+            SELECT 'Admin with this Email already exists' AS message;
+            RETURN;
+        END
 
+        IF EXISTS (SELECT 1 FROM Users WHERE Phone = @Phone and FirstName=@FirstName)
+        BEGIN
+            SELECT 'Admin with this Phone already exists' AS message;
+            RETURN;
+        END
 
-    INSERT INTO Users (FirstName, LastName, Email, Phone, Address, RegistrationDate, Password, UserType) 
-    VALUES (@FirstName, @LastName, @Email, @Phone, @Address, GETDATE(), HASHBYTES('SHA2_256', @Password), 'Admin');
+        -- Insert new admin
+        INSERT INTO Users (FirstName, LastName, Email, Phone, Address, RegistrationDate, Password, UserType) 
+        VALUES (@FirstName, @LastName, @Email, @Phone, @Address, GETDATE(), HASHBYTES('SHA2_256', @Password), 'Admin');
 
-    select 'Admin Added Successfully' as message;
+        SELECT 'Admin Added Successfully' AS message;
+    END TRY
+    BEGIN CATCH
+        -- Catch SQL errors, including UNIQUE constraint violations
+        SELECT ERROR_MESSAGE() AS message;
+    END CATCH
 END;
 
 Create view Members as
@@ -81,8 +93,21 @@ CREATE PROCEDURE SearchBookByName
 AS
 BEGIN
     
-    SELECT * FROM Book
-    WHERE BookName LIKE '%'+ @BookName + '%';
+   IF EXISTS (SELECT 1 FROM Book WHERE BookName LIKE '%' + @BookName + '%')
+
+   begin
+    SELECT b.ISBN, b.BookName, b.Price, b.BorrowPrice, 
+           b.PublishDate, c.CategoryName, p.PublisherName, a.AuthorName
+    FROM Book b
+    INNER JOIN Category c ON b.CategoryID = c.CategoryID
+    INNER JOIN Publisher p ON b.PublisherID = p.PublisherID
+    INNER JOIN Author a ON b.AuthorID = a.AuthorID
+    WHERE b.BookName LIKE '%' + @BookName + '%';
+	return ;
+	end
+
+	select 'Book Not Found' as message ;
+
 END;
 
 Create index AuthorNameSearch on Author(AuthorName);
@@ -101,13 +126,13 @@ BEGIN
     WHERE AuthorName LIKE '%'+ @AuthorName + '%';
 END;
 
-create view AllBooks
-as
-SELECT dbo.Book.*, dbo.Category.CategoryName, dbo.Publisher.PublisherName, dbo.Author.AuthorName
+create view AllBooks as
+SELECT dbo.Book.ISBN, dbo.Book.BookName, dbo.Book.Price, dbo.Book.BorrowPrice, dbo.Book.PublishDate, dbo.Category.CategoryName, dbo.Publisher.PublisherName, dbo.Author.AuthorName
 FROM     dbo.Author INNER JOIN
                   dbo.Book ON dbo.Author.AuthorID = dbo.Book.AuthorID INNER JOIN
                   dbo.Category ON dbo.Book.CategoryID = dbo.Category.CategoryID INNER JOIN
-                  dbo.Publisher ON dbo.Book.PublisherID = dbo.Publisher.PublisherID
+                  dbo.Publisher ON dbo.Book.PublisherID = dbo.Publisher.PublisherID 
+                
 
 
 
